@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.0.4 - 2026-01-09
+- better menu bar ux (ab9071c)
+
 ## v0.0.3 - 2026-01-09
 - new icon (51539b2)
 - new instructions (6a7ebf4)
