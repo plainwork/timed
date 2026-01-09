@@ -1,3 +1,4 @@
+import AVFoundation
 import Cocoa
 
 enum TimerState {
@@ -575,7 +576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var closeMonitor: Any?
     private var resignObserver: Any?
     private var selectedSoundURL: URL?
-    private var alertSound: NSSound?
+    private var alertPlayer: AVAudioPlayer?
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMainMenu()
 
@@ -780,15 +781,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func playAlertSoundIfNeeded() {
         stopAlertSound()
         guard let url = selectedSoundURL else { return }
-        guard let sound = NSSound(contentsOf: url, byReference: true) else { return }
-        sound.loops = true
-        sound.play()
-        alertSound = sound
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.numberOfLoops = -1
+            player.volume = 1.0
+            player.prepareToPlay()
+            player.play()
+            alertPlayer = player
+        } catch {
+            return
+        }
     }
 
     private func stopAlertSound() {
-        alertSound?.stop()
-        alertSound = nil
+        alertPlayer?.stop()
+        alertPlayer = nil
     }
 
     private func formatStatusTime(_ remaining: TimeInterval) -> String {
