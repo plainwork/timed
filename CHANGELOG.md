@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.0.5 - 2026-01-09
+- update audio playing (2f1de82)
+
 ## v0.0.4 - 2026-01-09
 - better menu bar ux (ab9071c)
 
