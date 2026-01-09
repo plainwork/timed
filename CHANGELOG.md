@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.0.6 - 2026-01-09
+- sound preview and preload (26982fe)
+
 ## v0.0.5 - 2026-01-09
 - update audio playing (2f1de82)
 
