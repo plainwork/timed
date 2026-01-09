@@ -563,12 +563,6 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
-    private static let statusItemFixedLength: CGFloat = {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        let sample = "23:59"
-        let size = (sample as NSString).size(withAttributes: [.font: font])
-        return ceil(size.width + 18)
-    }()
     private var statusItem: NSStatusItem?
     private var statusImage: NSImage?
     private let popover = NSPopover()
@@ -612,7 +606,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 
-        let item = NSStatusBar.system.statusItem(withLength: AppDelegate.statusItemFixedLength)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let image = NSImage(named: "MenuBarTemplate") {
             image.isTemplate = true
             image.size = NSSize(width: 18, height: 18)
@@ -666,6 +660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         endDate = Date().addingTimeInterval(duration)
         pausedRemaining = nil
         state = .running
+        closePopoverIfNeeded()
         scheduleTimer()
         tick()
     }
@@ -702,6 +697,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             timerController.setDuration(lastDuration)
         }
         updateStatusItem(remaining: nil)
+        reanchorPopoverIfNeeded()
     }
 
     private func restartTimer() {
@@ -750,6 +746,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func updateStatusItem(remaining: TimeInterval?) {
         guard let button = statusItem?.button else { return }
+        if state == .finished {
+            let title = "0:00"
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+                .foregroundColor: NSColor.labelColor
+            ]
+            button.attributedTitle = NSAttributedString(string: title, attributes: attributes)
+            button.image = nil
+            button.imagePosition = .noImage
+            return
+        }
         if let remaining, state == .running || state == .paused {
             let title = formatStatusTime(remaining)
             let attributes: [NSAttributedString.Key: Any] = [
@@ -758,6 +765,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             ]
             button.attributedTitle = NSAttributedString(string: title, attributes: attributes)
             button.image = nil
+            button.imagePosition = .noImage
         } else {
             button.attributedTitle = NSAttributedString(string: "")
             if let statusImage {
@@ -789,9 +797,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let minutes = (totalSeconds % 3600) / 60
         let seconds = totalSeconds % 60
         if hours > 0 {
-            return String(format: "%d:%02d", hours, minutes)
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
-        return String(format: "%d:%02d", minutes, seconds)
+        if minutes > 0 {
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
+        return String(format: "%02d", seconds)
     }
 
     private func configureMainMenu() {
@@ -807,6 +818,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func popoverWillClose(_ notification: Notification) {
         stopCloseMonitoring()
+    }
+
+    private func closePopoverIfNeeded() {
+        guard popover.isShown else { return }
+        popover.performClose(nil)
+        stopCloseMonitoring()
+    }
+
+    private func reanchorPopoverIfNeeded() {
+        guard popover.isShown, let button = statusItem?.button else { return }
+        popover.performClose(nil)
+        stopCloseMonitoring()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.updatePopoverContent()
+            self.popover.contentSize = self.popover.contentViewController?.preferredContentSize ?? NSSize(width: 320, height: 200)
+            self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            self.startCloseMonitoring()
+        }
     }
 
     private func startCloseMonitoring() {

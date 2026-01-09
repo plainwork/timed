@@ -30,4 +30,9 @@ elif [ -f "$BUILD_DIR/MenuBarTemplate.png" ]; then
   cp "$BUILD_DIR/MenuBarTemplate.png" "$APP_DIR/Contents/Resources/MenuBarTemplate.png"
 fi
 
+if [ -d "$ROOT_DIR/sounds" ]; then
+  rm -rf "$APP_DIR/Contents/Resources/sounds"
+  cp -R "$ROOT_DIR/sounds" "$APP_DIR/Contents/Resources/sounds"
+fi
+
 echo "Built $APP_DIR"
