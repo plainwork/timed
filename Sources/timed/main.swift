@@ -131,7 +131,7 @@ final class TimeInputField: NSTextField {
     }
 }
 
-final class TimerViewController: NSViewController, NSTextFieldDelegate {
+final class TimerViewController: NSViewController, NSTextFieldDelegate, AVAudioPlayerDelegate {
     var onStart: ((TimeInterval) -> Void)?
     var onPause: (() -> Void)?
     var onResume: (() -> Void)?
@@ -147,9 +147,12 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
     private let primaryButton = NSButton(title: "Start", target: nil, action: nil)
     private let finishedStopButton = NSButton(title: "Stop", target: nil, action: nil)
     private let restartButton = NSButton(title: "Restart", target: nil, action: nil)
-    private let soundLabel = NSTextField(labelWithString: "Sound")
     private let soundPopup = NSPopUpButton()
+    private let soundPreviewButton = NSButton()
     private var soundOptions: [SoundOption] = []
+    private var selectedSoundURL: URL?
+    private var previewPlayer: AVAudioPlayer?
+    private var previewPlayerURL: URL?
 
     private let inputRow = NSStackView()
     private let controlsStack = NSStackView()
@@ -167,6 +170,7 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
 
         configureTimeInputs()
         configureSoundPicker()
+        configureSoundPreviewButton()
 
         cancelButton.target = self
         cancelButton.action = #selector(cancelTimer)
@@ -230,11 +234,6 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
         restartButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         restartButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        soundLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        soundLabel.textColor = .secondaryLabelColor
-        soundLabel.alignment = .right
-        soundLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-
         soundPopup.font = NSFont.systemFont(ofSize: 12, weight: .regular)
 
         let hoursLabel = NSTextField(labelWithString: "Hours")
@@ -287,8 +286,8 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
         soundRow.orientation = .horizontal
         soundRow.spacing = 8
         soundRow.alignment = .centerY
-        soundRow.addArrangedSubview(soundLabel)
         soundRow.addArrangedSubview(soundPopup)
+        soundRow.addArrangedSubview(soundPreviewButton)
 
         let finishedButtons = NSStackView(views: [finishedStopButton, restartButton])
         finishedButtons.orientation = .horizontal
@@ -300,7 +299,7 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
         finishedStack.alignment = .centerX
         finishedStack.addArrangedSubview(finishedButtons)
 
-        let mainStack = NSStackView(views: [titleLabel, inputRow, controlsStack, finishedStack, soundRow])
+        let mainStack = NSStackView(views: [inputRow, controlsStack, finishedStack, soundRow])
         mainStack.orientation = .vertical
         mainStack.spacing = 16
         mainStack.alignment = .centerX
@@ -319,6 +318,12 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
 
         setState(.idle)
         view = container
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let radius = min(soundPreviewButton.bounds.width, soundPreviewButton.bounds.height) / 2
+        soundPreviewButton.layer?.cornerRadius = radius
     }
 
     func update(state: TimerState, remaining: TimeInterval?) {
@@ -350,6 +355,9 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
         case .finished:
             cancelButton.isEnabled = false
             updateCancelButtonAppearance()
+        }
+        if state != .idle {
+            stopSoundPreview()
         }
         updateSoundPickerState()
     }
@@ -389,8 +397,8 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
     private func updateSoundPickerState() {
         let isActive = currentState == .idle
         soundPopup.isEnabled = isActive
-        soundLabel.alphaValue = isActive ? 1.0 : 0.45
         soundPopup.alphaValue = isActive ? 1.0 : 0.45
+        updateSoundPreviewButtonState(isActive: isActive)
     }
 
     private func configureTimeInputs() {
@@ -411,6 +419,47 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
         soundPopup.translatesAutoresizingMaskIntoConstraints = false
         soundPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
         soundSelectionChanged()
+    }
+
+    private func configureSoundPreviewButton() {
+        soundPreviewButton.bezelStyle = .regularSquare
+        soundPreviewButton.isBordered = false
+        soundPreviewButton.title = ""
+        soundPreviewButton.target = self
+        soundPreviewButton.action = #selector(toggleSoundPreview)
+        soundPreviewButton.imagePosition = .imageOnly
+        soundPreviewButton.translatesAutoresizingMaskIntoConstraints = false
+        soundPreviewButton.wantsLayer = true
+        soundPreviewButton.layer?.cornerRadius = 14
+        soundPreviewButton.layer?.cornerCurve = .circular
+        soundPreviewButton.layer?.borderWidth = 0
+        soundPreviewButton.layer?.backgroundColor = NSColor.clear.cgColor
+        soundPreviewButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        soundPreviewButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        soundPreviewButton.widthAnchor.constraint(equalTo: soundPreviewButton.heightAnchor).isActive = true
+        soundPreviewButton.setContentHuggingPriority(.required, for: .horizontal)
+        soundPreviewButton.setContentHuggingPriority(.required, for: .vertical)
+        soundPreviewButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        soundPreviewButton.setContentCompressionResistancePriority(.required, for: .vertical)
+        updateSoundPreviewButtonState(isActive: currentState == .idle)
+    }
+
+    private func updateSoundPreviewButtonState(isActive: Bool) {
+        let hasSound = selectedSoundURL != nil
+        let isEnabled = isActive && hasSound
+        soundPreviewButton.isEnabled = isEnabled
+        soundPreviewButton.alphaValue = isEnabled ? 1.0 : 0.35
+        soundPreviewButton.contentTintColor = isEnabled ? .labelColor : .secondaryLabelColor
+        updateSoundPreviewIcon()
+    }
+
+    private func updateSoundPreviewIcon() {
+        let isPlaying = previewPlayer?.isPlaying ?? false
+        let symbolName = isPlaying ? "pause.fill" : "play.fill"
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
+            image.isTemplate = true
+            soundPreviewButton.image = image
+        }
     }
 
     private func configureField(_ field: TimeInputField, maxValue: Int, initialValue: Int) {
@@ -501,18 +550,70 @@ final class TimerViewController: NSViewController, NSTextFieldDelegate {
         let index = soundPopup.indexOfSelectedItem
         guard index >= 0, index < soundOptions.count else {
             onSoundSelection?(nil)
+            selectedSoundURL = nil
+            stopSoundPreview()
+            updateSoundPreviewButtonState(isActive: currentState == .idle)
             return
         }
+        selectedSoundURL = soundOptions[index].url
+        stopSoundPreview()
+        updateSoundPreviewButtonState(isActive: currentState == .idle)
         onSoundSelection?(soundOptions[index].url)
     }
 
     private func startTimer() {
+        stopSoundPreview()
         let duration = selectedDuration()
         guard duration > 0 else {
             NSSound.beep()
             return
         }
         onStart?(duration)
+    }
+
+    @objc private func toggleSoundPreview() {
+        guard let url = selectedSoundURL else { return }
+        if previewPlayer?.isPlaying == true {
+            previewPlayer?.pause()
+        } else {
+            if let player = preparePreviewPlayer(for: url) {
+                player.play()
+            }
+        }
+        updateSoundPreviewIcon()
+    }
+
+    private func stopSoundPreview() {
+        previewPlayer?.stop()
+        previewPlayer?.currentTime = 0
+        updateSoundPreviewIcon()
+    }
+
+    private func preparePreviewPlayer(for url: URL) -> AVAudioPlayer? {
+        if let existingURL = previewPlayerURL, existingURL == url, let player = previewPlayer {
+            player.prepareToPlay()
+            return player
+        }
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.numberOfLoops = 0
+            player.volume = 1.0
+            player.delegate = self
+            player.prepareToPlay()
+            previewPlayer = player
+            previewPlayerURL = url
+            return player
+        } catch {
+            previewPlayer = nil
+            previewPlayerURL = nil
+            return nil
+        }
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        guard player === previewPlayer else { return }
+        player.currentTime = 0
+        updateSoundPreviewIcon()
     }
 
     @objc private func stopTimer() {
@@ -577,6 +678,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var resignObserver: Any?
     private var selectedSoundURL: URL?
     private var alertPlayer: AVAudioPlayer?
+    private var alertPlayerURL: URL?
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMainMenu()
 
@@ -662,6 +764,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         pausedRemaining = nil
         state = .running
         closePopoverIfNeeded()
+        prepareAlertSoundIfNeeded()
         scheduleTimer()
         tick()
     }
@@ -779,23 +882,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func playAlertSoundIfNeeded() {
-        stopAlertSound()
         guard let url = selectedSoundURL else { return }
-        do {
-            let player = try AVAudioPlayer(contentsOf: url)
-            player.numberOfLoops = -1
-            player.volume = 1.0
-            player.prepareToPlay()
+        if let player = prepareAlertPlayer(for: url) {
+            player.currentTime = 0
             player.play()
-            alertPlayer = player
-        } catch {
-            return
         }
     }
 
     private func stopAlertSound() {
         alertPlayer?.stop()
-        alertPlayer = nil
+        alertPlayer?.currentTime = 0
+    }
+
+    private func prepareAlertSoundIfNeeded() {
+        guard let url = selectedSoundURL else { return }
+        _ = prepareAlertPlayer(for: url)
+    }
+
+    private func prepareAlertPlayer(for url: URL) -> AVAudioPlayer? {
+        if let existingURL = alertPlayerURL, existingURL == url, let player = alertPlayer {
+            player.prepareToPlay()
+            return player
+        }
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.numberOfLoops = -1
+            player.volume = 1.0
+            player.prepareToPlay()
+            alertPlayer = player
+            alertPlayerURL = url
+            return player
+        } catch {
+            alertPlayer = nil
+            alertPlayerURL = nil
+            return nil
+        }
     }
 
     private func formatStatusTime(_ remaining: TimeInterval) -> String {
